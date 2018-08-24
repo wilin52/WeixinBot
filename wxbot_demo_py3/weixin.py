@@ -23,6 +23,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from lxml import html
 from socket import timeout as timeout_error
+from autoreply import autoReply
 #import pdb
 
 # for media upload
@@ -105,7 +106,7 @@ class WebWeixin(object):
         self.GroupMemeberList = []  # 群友
         self.PublicUsersList = []  # 公众号／服务号
         self.SpecialUsersList = []  # 特殊账号
-        self.autoReplyMode = False
+        self.autoReplyMode = True
         self.syncHost = ''
         self.user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.109 Safari/537.36'
         self.interactive = False
@@ -616,7 +617,8 @@ class WebWeixin(object):
     def webwxgetmsgimg(self, msgid):
         url = self.base_uri + \
             '/webwxgetmsgimg?MsgID=%s&skey=%s' % (msgid, self.skey)
-        data = self._get(url)
+        logging.info("webwxgetmsgimg url :" + url)
+        data = self._get(url,"webwxgetmsgimg")
         if data == '':
             return ''
         fn = 'img_' + msgid + '.jpg'
@@ -793,12 +795,9 @@ class WebWeixin(object):
             if msgType == 1:
                 raw_msg = {'raw_msg': msg}
                 self._showMsg(raw_msg)
-#自己加的代码-------------------------------------------#
-                #if self.autoReplyRevokeMode:
-                #    store
-#自己加的代码-------------------------------------------#
                 if self.autoReplyMode:
-                    ans = self._xiaodoubi(content) + '\n[微信机器人自动回复]'
+                    ans = autoReply(content)+ ' -- [微信机器人自动回复]'
+                    logging.info("autoreply " + ans)
                     if self.webwxsendmsg(ans, msg['FromUserName']):
                         print('自动回复: ' + ans)
                         logging.info('自动回复: ' + ans)
@@ -882,9 +881,9 @@ class WebWeixin(object):
         while True:
             self.lastCheckTs = time.time()
             [retcode, selector] = self.synccheck()
-            if self.DEBUG:
-                print('retcode: %s, selector: %s' % (retcode, selector))
-            logging.debug('retcode: %s, selector: %s' % (retcode, selector))
+            # if self.DEBUG:
+                # print('retcode: %s, selector: %s' % (retcode, selector))
+            # logging.debug('retcode: %s, selector: %s' % (retcode, selector))
             if retcode == '1100':
                 print('[*] 你在手机上登出了微信，债见')
                 logging.debug('[*] 你在手机上登出了微信，债见')
@@ -898,6 +897,10 @@ class WebWeixin(object):
                     r = self.webwxsync()
                     if r is not None:
                         self.handleMsg(r)
+                # elif selector == '3':
+                #     r = self.webwxsync()
+                #     if r is not None:
+                #         self.handleMsg(r)
                 elif selector == '6':
                     # TODO
                     redEnvelope += 1
@@ -996,9 +999,9 @@ class WebWeixin(object):
         print()
         self._run('[*] 获取群 ... ', self.webwxbatchgetcontact)
         logging.debug('[*] 微信网页版 ... 开动')
-        if self.DEBUG:
-            print(self)
-        logging.debug(self)
+        # if self.DEBUG:
+        #     print(self)
+        # logging.debug(self)
 
         if self.interactive and input('[*] 是否开启自动回复模式(y/n): ') == 'y':
             self.autoReplyMode = True
@@ -1102,13 +1105,16 @@ class WebWeixin(object):
             request.add_header('Range', 'bytes=0-')
         if api == 'webwxgetvideo':
             request.add_header('Range', 'bytes=0-')
+        if api == 'webwxgetmsgimg':
+            request.add_header('Range', 'bytes=0-')
         try:
+            # 在最近一次测试发现，图片utf-8 decode不了
             response = urllib.request.urlopen(request, timeout=timeout) if timeout else urllib.request.urlopen(request)
-            if api == 'webwxgetvoice' or api == 'webwxgetvideo':
+            if api == 'webwxgetvoice' or api == 'webwxgetvideo' or api == 'webwxgetmsgimg':
                 data = response.read()
             else:
                 data = response.read().decode('utf-8')
-            logging.debug(url)
+            # logging.debug(url)
             return data
         except urllib.error.HTTPError as e:
             logging.error('HTTPError = ' + str(e.code))
@@ -1126,9 +1132,11 @@ class WebWeixin(object):
         return ''
 
     def _post(self, url: object, params: object, jsonfmt: object = True) -> object:
+        # 本机证书校验不通过，去除证书校验
+        ssl._create_default_https_context = ssl._create_unverified_context
         if jsonfmt:
             data = (json.dumps(params)).encode()
-            
+
             request = urllib.request.Request(url=url, data=data)
             request.add_header(
                 'ContentType', 'application/json; charset=UTF-8')
@@ -1186,7 +1194,6 @@ class WebWeixin(object):
             if pm:
                 return pm.group(1)
         return '未知'
-
 
 class UnicodeStreamFilter:
 
